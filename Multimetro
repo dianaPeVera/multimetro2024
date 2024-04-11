@@ -1,0 +1,373 @@
+#include <Wire.h> 
+#include <LiquidCrystal_I2C.h>
+
+LiquidCrystal_I2C lcd(0x27,20,4); 
+
+
+float mediaTotal;
+int muestra;
+float ohmios = 0.0;
+float voltaje = 0.0;
+
+bool medidor=true;
+
+const int switchPin1 = 5;  
+const int switchPin2 = 6;  
+const int switchPin3 = 7;  
+const int switchPin4 = 9;  
+const int switchPin5 = 10;
+#define buzzer 12
+#define rc 329.89
+#define lecturaV A3
+
+const int voltagePin = A4;  // Pin analógico utilizado para la lectura del voltaje
+float resistorValue = 0.68;  // Valor de la resistencia en ohmios
+#define S0 2
+#define S1 3
+#define S2 4
+#define mul_in A2
+int mux_state[8] = {0};
+//capa
+#define analogPin      A2          
+#define chargePin      8        
+#define dischargePin   13       
+#define resistorValue  10000.0F 
+unsigned long startTime;
+unsigned long elapsedTime;
+float microFarads=0;                
+float nanoFarads=0;
+////////////////////////////////
+float answer=0.0;
+int measure (void);
+
+void setup() {
+  Serial.begin(9600);
+  pinMode(buzzer, OUTPUT);
+  pinMode(chargePin, OUTPUT);     
+  digitalWrite(chargePin, LOW);
+
+  pinMode(switchPin1, INPUT_PULLUP);
+  pinMode(switchPin2, INPUT_PULLUP);
+  pinMode(switchPin3, INPUT_PULLUP);
+  pinMode(switchPin4, INPUT_PULLUP);
+  pinMode(switchPin5, INPUT_PULLUP);
+
+  pinMode(S0, OUTPUT);
+  pinMode(S1, OUTPUT);
+  pinMode(S2, OUTPUT);
+  lcd.init();                      // Inicializar la pantalla LCD
+  lcd.backlight();
+  lcd.setCursor(2, 0);
+  lcd.print("Multimetro");
+  delay(1000);
+  lcd.clear();
+
+  
+}
+
+void loop() {
+    int switchPosition = 0;
+  int switchState1 = digitalRead(switchPin1);
+  int switchState2 = digitalRead(switchPin2);
+  int switchState3 = digitalRead(switchPin3);
+  int switchState4 = digitalRead(switchPin4);
+  int switchState5 = digitalRead(switchPin5);
+  Serial.println(switchState1);
+    Serial.println(switchState2);
+  Serial.println(switchState3);
+  Serial.println(switchState4);
+  Serial.println(switchState5);
+  
+  updateMux1();
+  lcd.setCursor(3, 0);
+  lcd.print("Seleccione:");
+  if (switchState1 == LOW) {
+      switchPosition = 1;
+      //Serial.println("H");
+      lectura_amper();
+  }
+  else if (switchState2 == LOW) {
+    switchPosition = 2;
+     lectura_voltios();
+  }
+  else if (switchState3 == LOW) {
+    switchPosition = 3;
+    lectura_ohmios();
+  }
+  else if (switchState4 == LOW) {
+    switchPosition = 4;
+    lectura_cont();
+  }
+  else  {
+    digitalWrite(S0, HIGH);
+    digitalWrite(S1, LOW);
+    digitalWrite(S2, HIGH);
+    
+    switchPosition = 5;
+    lectura_capacitancia();
+  }
+    //Serial.println("La posición del switch es: " + String(switchPosition));
+
+  delay(100);
+}
+void updateMux1 () {
+  for (int i = 0; i < 8; i++){
+    digitalWrite(S0, HIGH && (i & B00000001));
+    digitalWrite(S1, HIGH && (i & B00000010));
+    digitalWrite(S2, HIGH && (i & B00000100));
+    
+    // Agregar impresiones de depuración para verificar la configuración del multiplexor
+    
+    
+    mux_state[i] = analogRead(mul_in);
+    /*
+    // Agregar impresión para ver los valores leídos de los pines multiplexados
+    Serial.print("Value at Mux state ");
+    Serial.print(i);
+    Serial.print(": ");
+    Serial.println(mux_state[i]);
+    */
+  }
+}
+void lectura_amper(){
+  float avgVoltage = 0;
+  float avgCurrent = 0;
+
+  // Realizar múltiples lecturas para promediar
+  for (int i = 0; i < 20; i++) {
+    float voltage = analogRead(A0) * 5.0 / 1023.0; 
+    float current = (voltage / 0.68) *1.83;
+    
+    // Sumar voltajes y corrientes para promediar
+    avgVoltage += voltage;
+    avgCurrent += current;
+  }
+
+  // Calcular promedio de voltajes y corrientes
+  avgVoltage /= 20;
+  avgCurrent /= 20;
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Amperimetro:");
+  lcd.setCursor(1, 1);
+  lcd.print(avgCurrent);
+  Serial.println(avgCurrent);
+ 
+  delay(80);
+}
+
+void lectura_cont(){
+  float lectura;
+  lectura = mux_state[7];
+  int lectura_digital = map(lectura, 0, 1023, 0, 255);
+
+  Serial.println(lectura_digital);
+  //lectura=analogRead(A0);
+   //Serial.println(lectura);
+   
+  if (lectura_digital >= 12) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Continuidad:");
+    lcd.setCursor(1, 1);
+    lcd.print("0");
+    digitalWrite(buzzer, LOW);
+  } else {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Continuidad:");
+    lcd.setCursor(1, 1);
+    lcd.print("1");
+    digitalWrite(buzzer, HIGH);
+  }
+  delay(100);
+}
+void lectura_voltios(){
+    float lectura;
+
+  lectura =analogRead(A0);//
+     Serial.println(lectura);
+
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Voltaje:");
+   //Si no se esta leyendo nada 
+  if (lectura == 0) {
+    lcd.setCursor(1, 1);
+    lcd.print("0");
+  }
+  else {
+    voltaje = ((5 * float(lectura)) / 1024.0);
+    Serial.println(voltaje);
+    if(voltaje<=1.30){ 
+      float v=float(voltaje*3.8);
+      lcd.setCursor(1, 1);
+      lcd.print(v);
+    }else if(voltaje>1.3 && voltaje<2){
+      float v=float(voltaje*3.9);
+      Serial.println(voltaje);
+      lcd.setCursor(1, 1);
+      lcd.print(v);
+      lcd.setCursor(8, 1);
+      lcd.print("V");
+
+    }
+    else {
+      float v=float(voltaje*3.92);
+      Serial.println(voltaje);
+      lcd.setCursor(1, 1);
+      lcd.print(v);
+      lcd.setCursor(8, 1);
+      lcd.print("V");
+
+    }
+    
+   // lcd.print(float(voltaje) * 3 * unidad, decimales);
+  }
+      delay(1000);
+}
+void lectura_ohmios() {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Resistencia:");
+
+  float avgV = 0;
+  float avgI = 0;
+
+  for (int i = 0; i < 6; i++) {
+    // Obtener voltaje para la lectura y la referencia
+    int bitsLecturaV = analogRead(lecturaV);
+    int bitsVin = analogRead(A1);//mux_state[1];
+    
+    // Calcular voltaje para la lectura y la referencia
+    float voltajeLecturaV = (bitsLecturaV * 4.99) / 1023.0;
+    float voltajeVin = (bitsVin * 4.99) / 1023.0;
+
+    // Sumar voltajes para promediar
+    avgV += voltajeLecturaV;
+    avgI += voltajeVin;
+  }
+
+  // Calcular promedio de voltajes
+  avgV /= 6;
+  avgI /= 6;
+
+  // Verificar si el divisor de voltaje es cero
+  if (avgV - avgI == 0 ) {
+    lcd.setCursor(1, 1);
+    lcd.print("0");
+    lcd.setCursor(8, 1);
+    lcd.print("Ohms");
+  } else {
+    // Calcular resistencia solo si el divisor de voltaje no es cero
+    float resistencia = (avgI * rc) / (avgV - avgI);
+      if (resistencia <= 0 ) {
+      lcd.setCursor(1, 1);
+      lcd.print("0");
+      lcd.setCursor(8, 1);
+      lcd.print("Ohms");
+      }
+    // Imprimir valor de resistencia
+     else if (resistencia >= 1000) {
+      // Si la resistencia es mayor o igual a 1000, mostrar en KOhms
+      if(resistencia <= 5000) {
+        resistencia = (avgI * 330) / (avgV - avgI);
+      } else {
+        float totalResistencia = 0;
+        for (int i = 0; i < 20; i++) {
+          // Obtener voltaje para la lectura y la referencia
+          int bitsLecturaV = analogRead(lecturaV);
+          int bitsVin = analogRead(A1);//mux_state[1];
+          
+          // Calcular voltaje para la lectura y la referencia
+          float voltajeLecturaV = (bitsLecturaV * 4.99) / 1023.0;
+          float voltajeVin = (bitsVin * 4.99) / 1023.0;
+
+          // Sumar voltajes para promediar
+          avgV += voltajeLecturaV;
+          avgI += voltajeVin;
+
+          // Calcular resistencia en cada iteración
+          float resistenciaIteracion = (voltajeVin * rc) / (voltajeLecturaV - voltajeVin);
+          totalResistencia += resistenciaIteracion;
+        }
+
+        // Calcular promedio de resistencia
+        resistencia = totalResistencia / 20;
+      }
+      resistencia /= 1000;
+      lcd.setCursor(1, 1);
+      lcd.print(resistencia);
+      lcd.setCursor(8, 1);
+      lcd.print("KOhms");
+    }
+ else {
+      // En cualquier otro caso, mostrar en Ohms
+      if(resistencia<20){
+        resistencia=resistencia = (avgI * 200) / (avgV - avgI);
+      }
+      
+      if(resistencia>=30){
+        resistencia=resistencia = (avgI * 280) / (avgV - avgI);
+      }
+      if(resistencia>=50 && resistencia <200){
+        resistencia=resistencia = (avgI * 310) / (avgV - avgI);
+      }
+      if(resistencia>200){
+        resistencia=resistencia = (avgI * 320) / (avgV - avgI);
+      }
+      lcd.setCursor(1, 1);
+      lcd.print(resistencia);
+      lcd.setCursor(8, 1);
+      lcd.print("Ohms");
+    }
+  }
+
+  delay(1000);
+}
+void lectura_capacitancia() {
+    
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Capacitancia:");
+  digitalWrite(chargePin, HIGH);  
+  
+  startTime = micros();
+  
+  while(analogRead(analogPin) < 648){       
+  }
+  
+  
+  elapsedTime= micros() - startTime;
+  microFarads = ((float)elapsedTime / resistorValue) ;
+ 
+  if (microFarads > 1){
+    lcd.setCursor(0,1);  
+    lcd.print(microFarads);
+    lcd.setCursor(14,1);        
+    lcd.print("uF");   
+    delay(500);    
+  }
+  else{
+    if (nanoFarads < 1){
+    lcd.setCursor(0,1);  
+    lcd.print(0);
+    lcd.setCursor(14,1);        
+    lcd.print("uF");   
+    delay(500);    
+  }
+    nanoFarads = microFarads * 1000.0-11; 
+    lcd.setCursor(0,1);       
+    lcd.print(nanoFarads);  
+    lcd.setCursor(14,1);       
+    lcd.print("nF");          
+    delay(500); 
+  }
+  
+  digitalWrite(chargePin, LOW);            
+  pinMode(dischargePin, OUTPUT);            
+  digitalWrite(dischargePin, LOW);     //discharging the capacitor     
+  while(analogRead(analogPin) > 0){ }    //This while waits till the capaccitor is discharged
+  pinMode(dischargePin, INPUT);      //this sets the pin to high impedance
+}
